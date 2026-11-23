@@ -56,6 +56,16 @@ def main(argv: list[str] | None = None) -> int:
     unity_compare = commands.add_parser("compare-unity", help="compare tagged Unity baseline and optimized captures")
     unity_compare.add_argument("baseline", type=Path)
     unity_compare.add_argument("optimized", type=Path)
+    plan = commands.add_parser("plan", help="save an AI optimization proposal for review")
+    plan.add_argument("--project-root", type=Path, default=Path.cwd(), help="SpecTuner checkout")
+    plan.add_argument("--baseline", type=Path, required=True, help="tagged baseline CSV")
+    plan.add_argument("--optimized", type=Path, required=True, help="tagged optimized CSV")
+    plan.add_argument("--assembly", type=Path, required=True, help="matching managed Unity DLL")
+    plan.add_argument("--output", type=Path, required=True, help="new JSON report outside the Unity project")
+    plan.add_argument("--provider", choices=("codex",), default="codex")
+    plan.add_argument("--model", help="override the provider's default model")
+    plan.add_argument("--model-timeout", type=float, default=180, help="provider timeout in seconds")
+    plan.add_argument("--codex-command", default="codex", help="Codex CLI executable")
     benchmark = commands.add_parser("compare", help="compare per-frame benchmark CSV files")
     benchmark.add_argument("before", type=Path)
     benchmark.add_argument("after", type=Path)
@@ -81,6 +91,17 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             registration = load_registration(args.config)
+            if args.command == "plan":
+                from .model import CodexProvider
+                from .planner import PlanningInputs, check_report_destination, plan_optimization, save_report
+
+                check_report_destination(args.output, args.project_root)
+                inputs = PlanningInputs(args.project_root, args.assembly, args.baseline, args.optimized)
+                provider = CodexProvider(args.codex_command, args.model, args.model_timeout)
+                draft = asyncio.run(plan_optimization(registration, inputs, provider))
+                save_report(args.output, draft)
+                print(f"Proposal saved to {args.output} (pending approval)")
+                return 0
             if args.command == "inspect":
                 evidence = asyncio.run(inspect_directory(registration, args.directory))
                 print(json.dumps(evidence, indent=2, ensure_ascii=True))

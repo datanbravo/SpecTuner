@@ -8,6 +8,8 @@ The [Phase 3 report](docs/phase3-waypoint-analysis.md) documents the real captur
 the compiled workload evidence, and the proposed behavior-preserving change.
 The [Phase 4 benchmark](docs/phase4-benchmark.md) records the implemented
 optimization, paired measurements, and their limitations.
+The [Phase 5 planner guide](docs/phase5-planner.md) shows how to generate an
+evidence-backed proposal with the existing Codex login.
 
 ## Setup
 
@@ -69,6 +71,8 @@ spectuner baseline examples/unity-synthetic.csv
 - `compare-unity BASELINE.csv OPTIMIZED.csv` reports P50/P95 frame time,
   NPC workload time, and managed allocations when available. The
   [Unity walkthrough](unity/README.md#run-locally) explains mode selection.
+- `plan` joins a benchmark pair to its compiled assembly, calls the configured
+  model provider, and saves a structured proposal for explicit review.
 
 The bundled CSVs are **synthetic**. They contain five frame times per scenario
 per file. Arena median moves from 22 to 18 ms and p95 from 35 to 24 ms. Menu
@@ -95,10 +99,8 @@ The typed interfaces in `spectuner/contracts.py` define artifact identity,
 evidence-backed findings, proposals, approvals bound to a baseline and change
 digest, and rollback receipts. They are interfaces for future implementations.
 
-Phase 2 reports timing observations alongside static REA findings and keeps
-their attribution separate. A future AI planner can use repeated captures
-and profiler evidence to draft changes to owned source or build
-settings. A future executor should verify the exact approved baseline and
-change, capture a restore point, apply in isolation, rebuild and compare a
-repeatable workload. AI proposals, approval enforcement, applying changes,
-automated benchmark runs and rollback are future work.
+The planner drafts one experiment from matching run and assembly evidence.
+A future executor should verify the exact approved baseline and change,
+capture a restore point, apply in isolation, rebuild and compare a repeatable
+workload. Applying changes, automated benchmark runs, and rollback are
+future work.
