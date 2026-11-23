@@ -11,6 +11,7 @@ from mcp.client.stdio import stdio_client
 from mcp.types import CallToolResult, InitializeResult, TextContent
 
 from .config import Registration
+from .unity import MEMBER_OPERATION, WORKLOAD_TYPE
 
 
 class ReaError(RuntimeError):
@@ -167,4 +168,26 @@ async def inspect_directory(registration: Registration, root: Path) -> dict[str,
         view = evidence.get("normalized_result")
         if not isinstance(view, dict) or view.get("kind") != "summary":
             raise ReaError("REA did not return the expected JavaScript inspection summary")
+        return evidence
+
+
+async def inspect_unity_assembly(registration: Registration, path: Path) -> dict[str, Any]:
+    path = path.resolve()
+    if path.suffix.lower() != ".dll" or not path.is_file():
+        raise ReaError(f"Expected a local managed Unity DLL: {path}")
+    with path.open("rb") as stream:
+        if stream.read(2) != b"MZ":
+            raise ReaError(f"Expected a PE/CLI assembly: {path}")
+    async with _connect(registration) as (session, _hello):
+        advertised = await _list_tools(session, registration.tool_timeout)
+        evidence = await _call(
+            session, registration.tool_timeout, advertised, MEMBER_OPERATION,
+            {"path": str(path), "detail": "summary", "type_names": [WORKLOAD_TYPE]},
+        )
+        view = evidence.get("normalized_result")
+        if (
+            not isinstance(view, dict) or view.get("kind") != "summary"
+            or view.get("parent_operation") != MEMBER_OPERATION
+        ):
+            raise ReaError("REA did not return the expected managed member summary")
         return evidence

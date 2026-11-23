@@ -1,8 +1,9 @@
 # SpecTuner
 
 SpecTuner is a Python harness for performance work on an owned Unity game.
-Phase 1 connects to REA over MCP, statically inspects a small first-party
-JavaScript artifact and compares exported frame times.
+SpecTuner connects to REA over MCP, inspects owned artifacts and reports
+frame timings. The [Unity benchmark walkthrough](unity/README.md) covers
+the Phase 2 NPC demo, capture format, and managed DLL inspection.
 
 ## Setup
 
@@ -33,6 +34,7 @@ spectuner rea-check
 spectuner rea-check --tools
 spectuner inspect examples/inspection-demo
 spectuner compare examples/before.csv examples/after.csv
+spectuner baseline examples/unity-synthetic.csv
 ```
 
 - `doctor` checks local prerequisites without starting REA.
@@ -44,7 +46,8 @@ spectuner compare examples/before.csv examples/after.csv
   static analyzer and prints its JSON evidence summary, including artifact hash,
   coverage and analysis statistics. The demo sources model a tiny game tick.
   The analyzer reads the sources without running them. Use owned artifacts only.
-  This workflow covers JavaScript directories. Unity binaries are future work.
+  This command covers JavaScript directories. Use `inspect-unity` for the
+  managed DLL compiled from the Unity demo.
 - `compare` reports frame count, median and nearest-rank p95 (rank
   `ceil(0.95 × N)`) for each scenario, with percentages relative to baseline.
   Negative percentages indicate lower frame times.
@@ -74,10 +77,10 @@ The typed interfaces in `spectuner/contracts.py` define artifact identity,
 evidence-backed findings, proposals, approvals bound to a baseline and change
 digest, and rollback receipts. They are interfaces for future implementations.
 
-The next phase can correlate REA findings from an explicitly selected owned
-Unity build with Unity profiler captures and rank bottleneck hypotheses. An
-AI planner can then draft evidence-backed changes to owned source or build
+Phase 2 reports timing observations alongside static REA findings and keeps
+their attribution separate. A future AI planner can use repeated captures
+and profiler evidence to draft changes to owned source or build
 settings. A future executor should verify the exact approved baseline and
 change, capture a restore point, apply in isolation, rebuild and compare a
-repeatable workload. Unity inspection, AI proposals, approval enforcement,
-patching, benchmark capture and rollback are all future work.
+repeatable workload. AI proposals, approval enforcement, applying changes,
+automated benchmark runs and rollback are future work.

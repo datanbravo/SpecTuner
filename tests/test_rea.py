@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import tempfile
 import unittest
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,7 +11,8 @@ from unittest.mock import AsyncMock, patch
 from mcp.types import CallToolResult, TextContent
 
 from spectuner.config import Registration, default_config_path, load_registration
-from spectuner.rea import ReaError, check_rea, inspect_directory
+from spectuner.rea import ReaError, check_rea, inspect_directory, inspect_unity_assembly
+from spectuner.unity import MEMBER_OPERATION, WORKLOAD_TYPE
 
 
 DEMO = Path(__file__).resolve().parents[1] / "examples" / "inspection-demo"
@@ -126,6 +128,30 @@ class ReaAdapterTests(unittest.IsolatedAsyncioTestCase):
             await inspect_directory(self.registration, DEMO / "main.js")
         self.session.initialize.assert_not_awaited()
 
+    async def test_unity_inspection_calls_only_scoped_managed_tool(self):
+        self.session.list_tools.side_effect = None
+        self.session.list_tools.return_value = SimpleNamespace(
+            tools=[SimpleNamespace(name=MEMBER_OPERATION)], nextCursor=None,
+        )
+        evidence = {"normalized_result": {"kind": "summary", "parent_operation": MEMBER_OPERATION}}
+        self.session.call_tool.return_value = CallToolResult(content=[], structuredContent=evidence)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "SpecTuner.UnityDemo.dll"
+            path.write_bytes(b"MZ mocked header")
+            self.assertEqual(await inspect_unity_assembly(self.registration, path), evidence)
+            self.session.call_tool.assert_awaited_once_with(MEMBER_OPERATION, arguments={
+                "path": str(path.resolve()), "detail": "summary", "type_names": [WORKLOAD_TYPE],
+            })
+        self.assertTrue(self.closed)
+
+    async def test_unity_inspection_rejects_non_pe_before_connecting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "native.dll"
+            path.write_bytes(b"not PE")
+            with self.assertRaisesRegex(ReaError, "Expected a PE/CLI assembly"):
+                await inspect_unity_assembly(self.registration, path)
+        self.session.initialize.assert_not_awaited()
+
     async def test_times_out_during_initialization(self):
         async def slow_initialize():
             await asyncio.sleep(10)
@@ -152,3 +178,15 @@ class LiveReaTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["summary"]["input_path"], str(DEMO))
         self.assertEqual(result["summary"]["format"], "directory")
         self.assertTrue(result["summary"]["root_artifact_sha256"])
+
+
+@unittest.skipUnless(os.environ.get("SPECTUNER_TEST_UNITY_ASSEMBLY"), "requires the compiled demo DLL")
+class LiveUnityReaTest(unittest.IsolatedAsyncioTestCase):
+    async def test_inspects_compiled_demo(self):
+        path = Path(os.environ["SPECTUNER_TEST_UNITY_ASSEMBLY"])
+        evidence = await inspect_unity_assembly(load_registration(default_config_path()), path)
+        summary = evidence["normalized_result"]["summary"]
+        self.assertEqual(summary["selection"]["type_names"], [WORKLOAD_TYPE])
+        self.assertEqual(summary["selection"]["unmatched_type_names"], [])
+        self.assertTrue(summary["module"]["mvid"])
+        self.assertGreaterEqual(summary["reported_counts"]["methods"], 3)

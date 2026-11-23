@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .benchmark import compare, format_report, read_benchmark
 from .config import ConfigError, default_config_path, load_registration
+from .unity import baseline_report, read_capture, read_rea_finding
 
 
 def _doctor(config_path: Path) -> int:
@@ -45,6 +46,12 @@ def main(argv: list[str] | None = None) -> int:
     rea.add_argument("--tools", action="store_true", help="include per-tool availability in the JSON report")
     inspect = commands.add_parser("inspect", help="inspect an owned local JavaScript application directory")
     inspect.add_argument("directory", type=Path)
+    unity = commands.add_parser("inspect-unity", help="statically inspect the owned demo's managed DLL")
+    unity.add_argument("assembly", type=Path)
+    baseline = commands.add_parser("baseline", help="summarize a Unity capture and optional REA evidence")
+    baseline.add_argument("capture", type=Path)
+    baseline.add_argument("--target-fps", type=float, default=60)
+    baseline.add_argument("--rea-evidence", type=Path)
     benchmark = commands.add_parser("compare", help="compare per-frame benchmark CSV files")
     benchmark.add_argument("before", type=Path)
     benchmark.add_argument("after", type=Path)
@@ -56,14 +63,23 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "compare":
             print(format_report(compare(read_benchmark(args.before), read_benchmark(args.after))))
             return 0
+        if args.command == "baseline":
+            capture = read_capture(args.capture)
+            findings = read_rea_finding(args.rea_evidence) if args.rea_evidence else None
+            print(baseline_report(capture, args.target_fps, findings))
+            return 0
         if importlib.util.find_spec("mcp") is None:
             raise ConfigError("Python MCP SDK is missing. Install SpecTuner with python -m pip install -e .")
-        from .rea import ReaError, check_rea, inspect_directory
+        from .rea import ReaError, check_rea, inspect_directory, inspect_unity_assembly
 
         try:
             registration = load_registration(args.config)
             if args.command == "inspect":
                 evidence = asyncio.run(inspect_directory(registration, args.directory))
+                print(json.dumps(evidence, indent=2, ensure_ascii=True))
+                return 0
+            if args.command == "inspect-unity":
+                evidence = asyncio.run(inspect_unity_assembly(registration, args.assembly))
                 print(json.dumps(evidence, indent=2, ensure_ascii=True))
                 return 0
             report = asyncio.run(check_rea(registration))

@@ -1,0 +1,5 @@
+scenario,npc_count,frame_index,frame_ms,fps,workload_ms,run_mode,assembly_mvid
+npc-scan,64,0,10,100,1.2,editor,72848892-07ff-4f2a-8d19-8023d106b968
+npc-scan,64,1,12,83.33333333333333,1.4,editor,72848892-07ff-4f2a-8d19-8023d106b968
+npc-scan,1024,0,20,50,6.1,editor,72848892-07ff-4f2a-8d19-8023d106b968
+npc-scan,1024,1,25,40,9.2,editor,72848892-07ff-4f2a-8d19-8023d106b968

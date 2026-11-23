@@ -4,3 +4,16 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+/unity/Library/
+/unity/Logs/
+/unity/Temp/
+/unity/Obj/
+/unity/UserSettings/
+/unity/Builds/
+/unity/Assets/Generated/
+/unity/Assets/Generated.meta
+/unity/Packages/packages-lock.json
+/unity/ProjectSettings/*
+!/unity/ProjectSettings/ProjectVersion.txt
+/unity/*.csproj
+/unity/*.sln

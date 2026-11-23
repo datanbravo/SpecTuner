@@ -13,6 +13,11 @@ class FrameStats:
     p95_ms: float
 
 
+def frame_stats(values: list[float]) -> FrameStats:
+    ordered = sorted(values)
+    return FrameStats(len(values), median(ordered), ordered[math.ceil(0.95 * len(values)) - 1])
+
+
 @dataclass(frozen=True)
 class Comparison:
     scenario: str
@@ -46,10 +51,7 @@ def read_benchmark(path: Path) -> dict[str, FrameStats]:
             samples[row[0].strip()].append(duration)
     if not samples:
         raise ValueError(f"{path}: expected at least one frame")
-    return {
-        scenario: FrameStats(len(values), median(values), sorted(values)[math.ceil(0.95 * len(values)) - 1])
-        for scenario, values in samples.items()
-    }
+    return {scenario: frame_stats(values) for scenario, values in samples.items()}
 
 
 def compare(before: dict[str, FrameStats], after: dict[str, FrameStats]) -> tuple[Comparison, ...]:
