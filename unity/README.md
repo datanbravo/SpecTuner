@@ -39,6 +39,8 @@ spectuner baseline "/actual/path/to/unity-capture.csv" --rea-evidence /tmp/spect
 
 `inspect-unity` uses the existing REA MCP registration and requests a
 read-only managed member summary scoped to `SpecTuner.UnityDemo.NpcWorkload`.
+Add `--complete` to export member rows, CIL anchors and call edges. Pass
+the default summary output to `baseline --rea-evidence`.
 Inspect the DLL from the capture's compilation. The report checks the
 module version ID (MVID) against the CSV and keeps missing or mismatched
 identity separate from the runtime measurements. Static method and call-edge
@@ -49,26 +51,19 @@ CSV columns are `scenario,npc_count,frame_index,frame_ms,fps,workload_ms,run_mod
 Each row records one frame. Unity's
 [unscaled frame delta](https://docs.unity.com/en-us/engine/6000.0/script-reference/unityengine/time/unscaleddeltatime)
 supplies frame time and a stopwatch times the NPC update associated with that
-interval. The per-frame FPS field is `1000 / frame_ms`. Reported mean FPS is
-`1000 / mean(frame_ms)`. P95 uses nearest rank, and frames over the budget
-are counted individually. The runner requests uncapped desktop frame pacing
+interval. The per-frame FPS field is `1000 / frame_ms`. Reported throughput
+FPS is frames divided by summed frame time. P95 and P99 use nearest rank.
+The report retains stalls and shows their share of captured time. The runner requests uncapped desktop frame pacing
 and writes CSV after all samples. Editor overhead, rendering changes with
 population, and fixed scenario order can affect the results. Repeat runs at
 the same resolution and settings before drawing conclusions.
 
 ## Evidence and next measurements
 
-- **Runtime measurements:** No real Unity capture was produced during initial
-  implementation. `examples/unity-synthetic.csv` is a test fixture for the
-  report and contains no measured results.
-- **REA findings:** The managed MCP route is ready for the compiled demo DLL.
-  No static findings from an actual Unity assembly were produced during
-  initial implementation.
-- **Source hypotheses:** The distance-array allocation and two waypoint
-  passes in `NpcWorkload` are candidates. In a separate Unity Profiler run,
-  inspect `SpecTuner.NpcWorkload` and GC Alloc to test them. If the workload
-  sample is small while frame times rise, inspect rendering and GPU timing.
-  No optimization or improvement has been measured.
+The [Phase 3 report](../docs/phase3-waypoint-analysis.md) records the real
+Unity capture, the matching managed DLL evidence, the proposed waypoint
+change, and the before/after plan. `examples/unity-synthetic.csv` remains a
+test fixture.
 
 Run tests from the repository root. The live Unity test requires a DLL
 compiled by this project.

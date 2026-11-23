@@ -4,16 +4,29 @@ SpecTuner is a Python harness for performance work on an owned Unity game.
 SpecTuner connects to REA over MCP, inspects owned artifacts and reports
 frame timings. The [Unity benchmark walkthrough](unity/README.md) covers
 the Phase 2 NPC demo, capture format, and managed DLL inspection.
+The [Phase 3 report](docs/phase3-waypoint-analysis.md) documents the real capture,
+the compiled workload evidence, and the proposed behavior-preserving change.
 
 ## Setup
 
-Use Python 3.11 or newer. From the repository root, create a fresh environment
-to keep the existing tracked `.venv` intact.
+Use Python 3.11 or newer. From the repository root, create a dedicated
+environment and install SpecTuner as a regular package.
 
 ```sh
 python3 -m venv .venv-spectuner
 source .venv-spectuner/bin/activate
-python -m pip install -e .
+python -m pip install .
+```
+
+If an existing environment's `spectuner` launcher raises
+`ModuleNotFoundError` after an editable install, activate that environment
+and repair it with `python -m pip install --force-reinstall --no-deps .`
+when its dependencies are already installed. On the affected Anaconda Python,
+startup skipped the editable install's `.pth` file. A regular install puts
+the package in `site-packages`. Verify it outside the checkout with:
+
+```sh
+(cd /tmp && env -u PYTHONPATH spectuner --help)
 ```
 
 The live check reads the local stdio registration at `[mcp_servers.rea]` from

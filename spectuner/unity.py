@@ -41,6 +41,25 @@ class ReaFinding:
     type_found: bool
 
 
+def frame_tail_report(label: str, count: int, frames: list[Frame], budget_ms: float) -> list[str]:
+    ranked = sorted(enumerate(frames), key=lambda item: item[1].duration_ms, reverse=True)
+    total_ms = math.fsum(frame.duration_ms for frame in frames)
+    slow = [item for item in ranked if item[1].duration_ms > budget_ms]
+    slow_share = math.fsum(frame.duration_ms for _, frame in slow) / total_ms
+    p99 = ranked[len(ranked) - math.ceil(0.99 * len(ranked))][1].duration_ms
+    maximum = ranked[0][1].duration_ms
+    lines = [
+        f"- {label}, {count} NPCs: mean {total_ms / len(frames):.2f} ms, "
+        f"P99 {p99:.2f} ms, max {maximum:.2f} ms, total {total_ms / 1000:.3f} s. "
+        f"Over-budget frames account for {slow_share:.1%} of captured time.",
+    ]
+    lines.extend(
+        f"  - Frame {index}: {frame.duration_ms:.2f} ms interval, {frame.workload_ms:.3f} ms NPC work."
+        for index, frame in slow[:3]
+    )
+    return lines
+
+
 def read_capture(path: Path) -> Capture:
     groups: dict[tuple[str, int], list[Frame]] = {}
     identity: tuple[str, UUID] | None = None
@@ -120,11 +139,12 @@ def baseline_report(capture: Capture, target_fps: float, evidence: ReaFinding | 
         f"Run mode {capture.mode} | Module MVID {capture.mvid} | "
         f"Frame budget {budget_ms:.2f} ms ({target_fps:g} FPS)",
         "",
-        "| Scenario | NPCs | Frames | Mean FPS | Median frame (ms) | P95 frame (ms) | Over budget | P95 NPC work (ms) |",
+        "| Scenario | NPCs | Frames | Throughput FPS | Median frame (ms) | P95 frame (ms) | Over budget | P95 NPC work (ms) |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     over_budget = []
     npc_work: list[tuple[int, float]] = []
+    tails: list[str] = []
     for (scenario, count), frames in sorted(capture.groups.items()):
         durations = [frame.duration_ms for frame in frames]
         timings = frame_stats(durations)
@@ -139,12 +159,20 @@ def baseline_report(capture: Capture, target_fps: float, evidence: ReaFinding | 
         )
         if timings.p95_ms > budget_ms:
             over_budget.append(f"{label} at {count} NPCs")
+        tails.extend(frame_tail_report(label, count, frames, budget_ms))
         if scenario == "npc-scan":
             npc_work.append((count, workload.p95_ms))
     lines.extend((
         "",
         "P95 exceeds the frame budget for " + ", ".join(over_budget) + "."
         if over_budget else "No recorded group had a P95 above the frame budget.",
+        "",
+        "## Frame-time tails",
+        "Throughput FPS is frames divided by the sum of all captured frame intervals. "
+        "Rare stalls can dominate it while leaving the median and P95 low. All intervals are retained. "
+        "Up to three of the longest over-budget intervals per group are shown with zero-based CSV frame indices.",
+        "",
+        *tails,
         "",
         "## REA static findings",
     ))
@@ -175,7 +203,7 @@ def baseline_report(capture: Capture, target_fps: float, evidence: ReaFinding | 
     if npc_work:
         lines.extend((
             "- Source hypothesis from NpcWorkload.MeasureWaypoints: profile the per-NPC distance array in Unity "
-            "Profiler (GC Alloc). Evaluate a single-pass squared-distance search with the same arrival threshold.",
+            "Profiler (GC Alloc). Evaluate a fused scan that retains Vector3.Distance and the original comparison rules.",
             "- If NPC work explains little of slow frames, inspect render-thread and GPU timings with the same load.",
         ))
     else:

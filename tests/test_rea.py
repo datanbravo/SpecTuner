@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from contextlib import asynccontextmanager
@@ -152,6 +153,25 @@ class ReaAdapterTests(unittest.IsolatedAsyncioTestCase):
                 await inspect_unity_assembly(self.registration, path)
         self.session.initialize.assert_not_awaited()
 
+    async def test_unity_complete_inspection_keeps_method_and_call_rows(self):
+        self.session.list_tools.side_effect = None
+        self.session.list_tools.return_value = SimpleNamespace(
+            tools=[SimpleNamespace(name=MEMBER_OPERATION)], nextCursor=None,
+        )
+        evidence = {
+            "operation": MEMBER_OPERATION,
+            "normalized_result": {"methods": [{"name": "Tick"}], "call_edges": []},
+        }
+        self.session.call_tool.return_value = CallToolResult(content=[], structuredContent=evidence)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "SpecTuner.UnityDemo.dll"
+            path.write_bytes(b"MZ test header")
+            self.assertEqual(await inspect_unity_assembly(self.registration, path, complete=True), evidence)
+            self.session.call_tool.assert_awaited_once_with(MEMBER_OPERATION, arguments={
+                "path": str(path.resolve()), "detail": "complete", "type_names": [WORKLOAD_TYPE],
+            })
+        self.assertTrue(self.closed)
+
     async def test_times_out_during_initialization(self):
         async def slow_initialize():
             await asyncio.sleep(10)
@@ -172,12 +192,15 @@ class LiveReaTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("binary_session", {tool.name for tool in report.tools if tool.available})
 
     async def test_inspects_first_party_demo(self):
-        evidence = await inspect_directory(load_registration(default_config_path()), DEMO)
-        result = evidence["normalized_result"]
-        self.assertEqual(result["parent_operation"], "analyze_javascript_application")
-        self.assertEqual(result["summary"]["input_path"], str(DEMO))
-        self.assertEqual(result["summary"]["format"], "directory")
-        self.assertTrue(result["summary"]["root_artifact_sha256"])
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory).resolve() / DEMO.name
+            shutil.copytree(DEMO, artifact, copy_function=shutil.copyfile)
+            evidence = await inspect_directory(load_registration(default_config_path()), artifact)
+            result = evidence["normalized_result"]
+            self.assertEqual(result["parent_operation"], "analyze_javascript_application")
+            self.assertEqual(result["summary"]["input_path"], str(artifact))
+            self.assertEqual(result["summary"]["format"], "directory")
+            self.assertTrue(result["summary"]["root_artifact_sha256"])
 
 
 @unittest.skipUnless(os.environ.get("SPECTUNER_TEST_UNITY_ASSEMBLY"), "requires the compiled demo DLL")
@@ -190,3 +213,10 @@ class LiveUnityReaTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["selection"]["unmatched_type_names"], [])
         self.assertTrue(summary["module"]["mvid"])
         self.assertGreaterEqual(summary["reported_counts"]["methods"], 3)
+
+    async def test_reads_compiled_workload_methods(self):
+        path = Path(os.environ["SPECTUNER_TEST_UNITY_ASSEMBLY"])
+        evidence = await inspect_unity_assembly(load_registration(default_config_path()), path, complete=True)
+        workload = evidence["normalized_result"]
+        self.assertIn("Tick", {method["name"] for method in workload["methods"]})
+        self.assertTrue(workload["call_edges"])

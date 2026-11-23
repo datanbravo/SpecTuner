@@ -3,10 +3,13 @@ import json
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 
 from spectuner.cli import main
-from spectuner.unity import CAPTURE_HEADER, MEMBER_OPERATION, WORKLOAD_TYPE, baseline_report, read_capture, read_rea_finding
+from spectuner.unity import (
+    CAPTURE_HEADER, MEMBER_OPERATION, WORKLOAD_TYPE, Frame, baseline_report, read_capture, read_rea_finding,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +54,16 @@ class UnityCaptureTests(unittest.TestCase):
         for target in (0, -1, float("nan"), float("inf")):
             with self.subTest(target=target), self.assertRaisesRegex(ValueError, "frame budget"):
                 baseline_report(read_capture(FIXTURE), target)
+
+    def test_slow_interval_changes_throughput_but_not_p95(self):
+        frames = [Frame(4, 2)] * 100
+        frames[21] = Frame(8000, 2.4)
+        capture = replace(read_capture(FIXTURE), groups={("npc-scan", 1024): frames})
+        report = baseline_report(capture, 60)
+        self.assertIn("| npc-scan | 1024 | 100 | 11.91 | 4.00 | 4.00 | 1/100 (1.0%) | 2.000 |", report)
+        self.assertIn("P99 4.00 ms, max 8000.00 ms, total 8.396 s", report)
+        self.assertIn("95.3% of captured time", report)
+        self.assertIn("Frame 21: 8000.00 ms interval, 2.400 ms NPC work.", report)
 
     def test_reports_rea_evidence_with_match_and_mismatch(self):
         evidence = {"normalized_result": {

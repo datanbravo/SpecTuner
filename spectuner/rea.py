@@ -171,7 +171,9 @@ async def inspect_directory(registration: Registration, root: Path) -> dict[str,
         return evidence
 
 
-async def inspect_unity_assembly(registration: Registration, path: Path) -> dict[str, Any]:
+async def inspect_unity_assembly(
+    registration: Registration, path: Path, *, complete: bool = False
+) -> dict[str, Any]:
     path = path.resolve()
     if path.suffix.lower() != ".dll" or not path.is_file():
         raise ReaError(f"Expected a local managed Unity DLL: {path}")
@@ -182,12 +184,16 @@ async def inspect_unity_assembly(registration: Registration, path: Path) -> dict
         advertised = await _list_tools(session, registration.tool_timeout)
         evidence = await _call(
             session, registration.tool_timeout, advertised, MEMBER_OPERATION,
-            {"path": str(path), "detail": "summary", "type_names": [WORKLOAD_TYPE]},
+            {"path": str(path), "detail": "complete" if complete else "summary", "type_names": [WORKLOAD_TYPE]},
         )
         view = evidence.get("normalized_result")
-        if (
-            not isinstance(view, dict) or view.get("kind") != "summary"
-            or view.get("parent_operation") != MEMBER_OPERATION
-        ):
+        if not isinstance(view, dict):
+            raise ReaError("REA did not return managed member evidence")
+        if complete:
+            if evidence.get("operation") != MEMBER_OPERATION or not all(
+                isinstance(view.get(collection), list) for collection in ("methods", "call_edges")
+            ):
+                raise ReaError("REA did not return the expected complete managed member evidence")
+        elif view.get("kind") != "summary" or view.get("parent_operation") != MEMBER_OPERATION:
             raise ReaError("REA did not return the expected managed member summary")
         return evidence

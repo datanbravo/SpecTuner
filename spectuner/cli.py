@@ -48,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     inspect.add_argument("directory", type=Path)
     unity = commands.add_parser("inspect-unity", help="statically inspect the owned demo's managed DLL")
     unity.add_argument("assembly", type=Path)
+    unity.add_argument("--complete", action="store_true", help="include static member and call-edge rows")
     baseline = commands.add_parser("baseline", help="summarize a Unity capture and optional REA evidence")
     baseline.add_argument("capture", type=Path)
     baseline.add_argument("--target-fps", type=float, default=60)
@@ -69,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
             print(baseline_report(capture, args.target_fps, findings))
             return 0
         if importlib.util.find_spec("mcp") is None:
-            raise ConfigError("Python MCP SDK is missing. Install SpecTuner with python -m pip install -e .")
+            raise ConfigError("Python MCP SDK is missing. Install SpecTuner with python -m pip install .")
         from .rea import ReaError, check_rea, inspect_directory, inspect_unity_assembly
 
         try:
@@ -79,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(evidence, indent=2, ensure_ascii=True))
                 return 0
             if args.command == "inspect-unity":
-                evidence = asyncio.run(inspect_unity_assembly(registration, args.assembly))
+                evidence = asyncio.run(inspect_unity_assembly(registration, args.assembly, complete=args.complete))
                 print(json.dumps(evidence, indent=2, ensure_ascii=True))
                 return 0
             report = asyncio.run(check_rea(registration))
