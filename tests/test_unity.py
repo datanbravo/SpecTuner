@@ -8,7 +8,8 @@ from pathlib import Path
 
 from spectuner.cli import main
 from spectuner.unity import (
-    CAPTURE_HEADER, MEMBER_OPERATION, WORKLOAD_TYPE, Frame, baseline_report, read_capture, read_rea_finding,
+    CAPTURE_HEADER, LEGACY_CAPTURE_HEADER, MEMBER_OPERATION, WORKLOAD_TYPE,
+    Frame, baseline_report, compare_unity_report, read_capture, read_rea_finding,
 )
 
 
@@ -42,7 +43,7 @@ class UnityCaptureTests(unittest.TestCase):
             path = Path(directory) / "capture.csv"
             for csv_rows, error in cases:
                 with self.subTest(error=error):
-                    path.write_text(",".join(CAPTURE_HEADER) + "\n" + csv_rows, encoding="utf-8")
+                    path.write_text(",".join(LEGACY_CAPTURE_HEADER) + "\n" + csv_rows, encoding="utf-8")
                     with self.assertRaisesRegex(ValueError, error):
                         read_capture(path)
 
@@ -64,6 +65,62 @@ class UnityCaptureTests(unittest.TestCase):
         self.assertIn("P99 4.00 ms, max 8000.00 ms, total 8.396 s", report)
         self.assertIn("95.3% of captured time", report)
         self.assertIn("Frame 21: 8000.00 ms interval, 2.400 ms NPC work.", report)
+
+    def test_compare_tagged_captures_from_csv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            before_path = Path(directory) / "baseline.csv"
+            after_path = Path(directory) / "optimized.csv"
+            header = ",".join(CAPTURE_HEADER) + "\n"
+            before_path.write_text(header + f"npc-scan,64,0,10,100,4,editor,{MVID},baseline,512\n"
+                                   + f"npc-scan,64,1,20,50,8,editor,{MVID},baseline,768\n", encoding="utf-8")
+            after_path.write_text(header + f"npc-scan,64,0,8,125,2,editor,{MVID},optimized,0\n"
+                                  + f"npc-scan,64,1,10,100,4,editor,{MVID},optimized,0\n", encoding="utf-8")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(main(["compare-unity", str(before_path), str(after_path)]), 0)
+            report = output.getvalue()
+            self.assertIn("| P50 Frame time (ms) | 15.000 | 9.000 | -6.000 | -40.00% |", report)
+            self.assertIn("| P95 Frame time (ms) | 20.000 | 10.000 | -10.000 | -50.00% |", report)
+            self.assertIn("| P50 NPC workload (ms) | 6.000 | 3.000 | -3.000 | -50.00% |", report)
+            self.assertIn("| P95 Managed bytes/frame | 768.000 | 0.000 | -768.000 | -100.00% |", report)
+
+    def test_compare_reports_unavailable_allocation_and_zero_baseline(self):
+        legacy = read_capture(FIXTURE)
+        before = replace(legacy, optimization_mode="baseline", groups={("npc-scan", 64): [Frame(10, 0, 0)]})
+        after = replace(before, optimization_mode="optimized", groups={("npc-scan", 64): [Frame(10, 1)]})
+        report = compare_unity_report(before, after)
+        self.assertIn("| P50 Managed bytes/frame | 0.000 | unavailable | — | — |", report)
+        self.assertIn("| P50 NPC workload (ms) | 0.000 | 1.000 | +1.000 | — |", report)
+
+    def test_compare_rejects_unmatched_captures(self):
+        legacy = read_capture(FIXTURE)
+        before = replace(legacy, optimization_mode="baseline")
+        after = replace(legacy, optimization_mode="optimized")
+        for first, second, error in (
+            (legacy, after, "tagged baseline"),
+            (after, before, "tagged baseline"),
+            (before, replace(after, mode="player"), "same run mode and assembly MVID"),
+            (before, replace(after, mvid=after.mvid.__class__(int=1)), "same run mode and assembly MVID"),
+            (before, replace(after, groups={}), "same scenarios and NPC counts"),
+        ):
+            with self.subTest(error=error), self.assertRaisesRegex(ValueError, error):
+                compare_unity_report(first, second)
+
+    def test_rejects_invalid_mode_and_mixed_allocation_data(self):
+        row = f"npc-scan,64,0,10,100,1,editor,{MVID}"
+        next_row = row.replace(",0,10,", ",1,10,")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "capture.csv"
+            for rows, error in (
+                (row + ",other,1", "optimization_mode"),
+                (row + ",baseline,-1", "must be nonnegative"),
+                (row + ",baseline,0\n" + next_row + ",baseline,", "mixed optimization modes or allocation"),
+                (row + ",baseline,0\n" + next_row + ",optimized,0", "mixed optimization modes or allocation"),
+            ):
+                with self.subTest(error=error):
+                    path.write_text(",".join(CAPTURE_HEADER) + "\n" + rows + "\n", encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, error):
+                        read_capture(path)
 
     def test_reports_rea_evidence_with_match_and_mismatch(self):
         evidence = {"normalized_result": {

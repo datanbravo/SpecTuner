@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .benchmark import compare, format_report, read_benchmark
 from .config import ConfigError, default_config_path, load_registration
-from .unity import baseline_report, read_capture, read_rea_finding
+from .unity import baseline_report, compare_unity_report, read_capture, read_rea_finding
 
 
 def _doctor(config_path: Path) -> int:
@@ -53,6 +53,9 @@ def main(argv: list[str] | None = None) -> int:
     baseline.add_argument("capture", type=Path)
     baseline.add_argument("--target-fps", type=float, default=60)
     baseline.add_argument("--rea-evidence", type=Path)
+    unity_compare = commands.add_parser("compare-unity", help="compare tagged Unity baseline and optimized captures")
+    unity_compare.add_argument("baseline", type=Path)
+    unity_compare.add_argument("optimized", type=Path)
     benchmark = commands.add_parser("compare", help="compare per-frame benchmark CSV files")
     benchmark.add_argument("before", type=Path)
     benchmark.add_argument("after", type=Path)
@@ -68,6 +71,9 @@ def main(argv: list[str] | None = None) -> int:
             capture = read_capture(args.capture)
             findings = read_rea_finding(args.rea_evidence) if args.rea_evidence else None
             print(baseline_report(capture, args.target_fps, findings))
+            return 0
+        if args.command == "compare-unity":
+            print(compare_unity_report(read_capture(args.baseline), read_capture(args.optimized)))
             return 0
         if importlib.util.find_spec("mcp") is None:
             raise ConfigError("Python MCP SDK is missing. Install SpecTuner with python -m pip install .")

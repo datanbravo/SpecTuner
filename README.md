@@ -6,6 +6,8 @@ frame timings. The [Unity benchmark walkthrough](unity/README.md) covers
 the Phase 2 NPC demo, capture format, and managed DLL inspection.
 The [Phase 3 report](docs/phase3-waypoint-analysis.md) documents the real capture,
 the compiled workload evidence, and the proposed behavior-preserving change.
+The [Phase 4 benchmark](docs/phase4-benchmark.md) records the implemented
+optimization, paired measurements, and their limitations.
 
 ## Setup
 
@@ -64,6 +66,9 @@ spectuner baseline examples/unity-synthetic.csv
 - `compare` reports frame count, median and nearest-rank p95 (rank
   `ceil(0.95 × N)`) for each scenario, with percentages relative to baseline.
   Negative percentages indicate lower frame times.
+- `compare-unity BASELINE.csv OPTIMIZED.csv` reports P50/P95 frame time,
+  NPC workload time, and managed allocations when available. The
+  [Unity walkthrough](unity/README.md#run-locally) explains mode selection.
 
 The bundled CSVs are **synthetic**. They contain five frame times per scenario
 per file. Arena median moves from 22 to 18 ms and p95 from 35 to 24 ms. Menu

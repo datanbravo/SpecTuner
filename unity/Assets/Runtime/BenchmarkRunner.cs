@@ -17,6 +17,8 @@ namespace SpecTuner.UnityDemo
         private const double SampleSeconds = 10;
         private const int WaypointCount = 128;
 
+        [SerializeField] private WaypointSearchMode waypointSearch = WaypointSearchMode.Baseline;
+
         private readonly List<Sample> samples = new List<Sample>(16384);
         private readonly Vector3[] waypoints = new Vector3[WaypointCount];
         private Transform[] agents = Array.Empty<Transform>();
@@ -28,6 +30,8 @@ namespace SpecTuner.UnityDemo
         private bool pendingSample;
         private double startedAt;
         private double previousWorkloadMs;
+        private ProfilerRecorder frameAllocations;
+        private WaypointSearchMode activeMode;
 
         private struct Sample
         {
@@ -35,10 +39,13 @@ namespace SpecTuner.UnityDemo
             public int FrameIndex;
             public double FrameMs;
             public double WorkloadMs;
+            public long? FrameAllocBytes;
         }
 
         private void Start()
         {
+            activeMode = waypointSearch;
+            frameAllocations = StartFrameAllocationRecorder();
             previousVsync = QualitySettings.vSyncCount;
             previousTargetFps = Application.targetFrameRate;
             settingsApplied = true;
@@ -84,7 +91,9 @@ namespace SpecTuner.UnityDemo
                     NpcCount = agents.Length,
                     FrameIndex = frameIndex++,
                     FrameMs = delta * 1000.0,
-                    WorkloadMs = previousWorkloadMs
+                    WorkloadMs = previousWorkloadMs,
+                    FrameAllocBytes = frameAllocations.Valid && frameAllocations.Count > 0
+                        ? frameAllocations.LastValue : (long?)null
                 });
 
             double elapsed = Time.realtimeSinceStartupAsDouble - startedAt;
@@ -117,29 +126,43 @@ namespace SpecTuner.UnityDemo
 
             long started = Stopwatch.GetTimestamp();
             using (WorkloadMarker.Auto())
-                NpcWorkload.Tick(agents, waypoints, delta);
+                NpcWorkload.Tick(agents, waypoints, delta, activeMode);
             previousWorkloadMs = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
             pendingSample = elapsed >= WarmupSeconds;
+        }
+
+        internal static ProfilerRecorder StartFrameAllocationRecorder()
+        {
+            var recorder = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Allocated In Frame", 1);
+            if (!recorder.Valid)
+                return default;
+            if (recorder.UnitType == ProfilerMarkerDataUnit.Bytes)
+                return recorder;
+            recorder.Dispose();
+            return default;
         }
 
         private void WriteCapture()
         {
             string directory = Path.Combine(Application.persistentDataPath, "SpecTuner");
             Directory.CreateDirectory(directory);
-            string filename = "unity-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", Invariant)
+            string searchMode = activeMode == WaypointSearchMode.Optimized ? "optimized" : "baseline";
+            string filename = "unity-" + searchMode + "-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", Invariant)
                 + "-" + Guid.NewGuid().ToString("N");
             string path = Path.Combine(directory, filename + ".csv");
             string temporaryPath = Path.Combine(directory, filename + ".tmp");
             string mode = Application.isEditor ? "editor" : "player";
             string mvid = typeof(NpcWorkload).Module.ModuleVersionId.ToString("D");
+            bool hasAllocationSamples = samples.TrueForAll(sample => sample.FrameAllocBytes.HasValue);
             using (var writer = new StreamWriter(temporaryPath))
             {
-                writer.WriteLine("scenario,npc_count,frame_index,frame_ms,fps,workload_ms,run_mode,assembly_mvid");
+                writer.WriteLine("scenario,npc_count,frame_index,frame_ms,fps,workload_ms,run_mode,assembly_mvid,optimization_mode,frame_alloc_bytes");
                 foreach (Sample sample in samples)
                     writer.WriteLine(string.Format(Invariant,
-                        "npc-scan,{0},{1},{2:R},{3:R},{4:R},{5},{6}",
+                        "npc-scan,{0},{1},{2:R},{3:R},{4:R},{5},{6},{7},{8}",
                         sample.NpcCount, sample.FrameIndex, sample.FrameMs,
-                        1000.0 / sample.FrameMs, sample.WorkloadMs, mode, mvid));
+                        1000.0 / sample.FrameMs, sample.WorkloadMs, mode, mvid, searchMode,
+                        hasAllocationSamples ? sample.FrameAllocBytes.Value.ToString(Invariant) : ""));
             }
             File.Move(temporaryPath, path);
             Debug.Log("SpecTuner capture written to " + path);
@@ -147,6 +170,11 @@ namespace SpecTuner.UnityDemo
 
         private void OnDisable()
         {
+            if (frameAllocations.Valid)
+            {
+                frameAllocations.Dispose();
+                frameAllocations = default;
+            }
             if (!settingsApplied)
                 return;
             QualitySettings.vSyncCount = previousVsync;
