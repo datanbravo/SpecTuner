@@ -66,6 +66,28 @@ def main(argv: list[str] | None = None) -> int:
     plan.add_argument("--model", help="override the provider's default model")
     plan.add_argument("--model-timeout", type=float, default=180, help="provider timeout in seconds")
     plan.add_argument("--codex-command", default="codex", help="Codex CLI executable")
+    experiment = commands.add_parser("experiment", help="review and run an isolated Unity experiment")
+    steps = experiment.add_subparsers(dest="experiment_step", required=True)
+    prepare = steps.add_parser("prepare", help="verify a proposal and write the exact patch for review")
+    prepare.add_argument("--workspace", type=Path, required=True)
+    prepare.add_argument("--project-root", type=Path, default=Path.cwd())
+    prepare.add_argument("--proposal", type=Path, required=True)
+    prepare.add_argument("--baseline", type=Path, required=True)
+    prepare.add_argument("--optimized", type=Path, required=True)
+    prepare.add_argument("--assembly", type=Path, required=True)
+    prepare.add_argument("--model")
+    prepare.add_argument("--model-timeout", type=float, default=180)
+    prepare.add_argument("--codex-command", default="codex")
+    run = steps.add_parser("run", help="apply a human-approved patch and run Unity checks in two copies")
+    run.add_argument("--workspace", type=Path, required=True)
+    run.add_argument("--approve", required=True, help="exact review ID after inspecting candidate.diff")
+    run.add_argument("--reviewer", required=True)
+    run.add_argument("--unity-editor", type=Path, required=True)
+    run.add_argument("--unity-timeout", type=float, default=300)
+    finish = steps.add_parser("finish", help="import paired captures and evaluate the reviewed criteria")
+    finish.add_argument("--workspace", type=Path, required=True)
+    finish.add_argument("--pair", type=Path, nargs=2, action="append", default=[], metavar=("BASELINE", "CANDIDATE"))
+    finish.add_argument("--abandon", action="store_true", help="restore the candidate copy without a benchmark decision")
     benchmark = commands.add_parser("compare", help="compare per-frame benchmark CSV files")
     benchmark.add_argument("before", type=Path)
     benchmark.add_argument("after", type=Path)
@@ -91,6 +113,34 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             registration = load_registration(args.config)
+            if args.command == "experiment":
+                from .experiment import finish_experiment, prepare_experiment, run_experiment
+                from .model import CodexProvider
+                from .planner import PlanningInputs
+
+                if args.experiment_step == "prepare":
+                    review = asyncio.run(prepare_experiment(
+                        registration, PlanningInputs(args.project_root, args.assembly, args.baseline, args.optimized),
+                        args.proposal, args.workspace, CodexProvider(args.codex_command, args.model, args.model_timeout),
+                    ))
+                    print(review["review"]["patch"], end="")
+                    print(f'Review ID {review["review_id"]}')
+                    print(f"Review saved to {args.workspace / 'review.json'}. Approval required before applying.")
+                    return 0
+                if args.experiment_step == "run":
+                    result = asyncio.run(run_experiment(
+                        registration, args.workspace, args.approve, args.reviewer, args.unity_editor, args.unity_timeout,
+                    ))
+                else:
+                    if args.abandon and args.pair:
+                        raise ValueError("Use either --abandon or --pair")
+                    result = finish_experiment(
+                        args.workspace, [pair[0] for pair in args.pair], [pair[1] for pair in args.pair],
+                        abandon=args.abandon,
+                    )
+                print(f'{result["state"]} · {result["decision"]} · {result["reason"]}')
+                print(f"Report saved to {args.workspace / 'report.json'}")
+                return 0
             if args.command == "plan":
                 from .model import CodexProvider
                 from .planner import PlanningInputs, check_report_destination, plan_optimization, save_report

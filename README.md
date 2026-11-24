@@ -10,6 +10,8 @@ The [Phase 4 benchmark](docs/phase4-benchmark.md) records the implemented
 optimization, paired measurements, and their limitations.
 The [Phase 5 planner guide](docs/phase5-planner.md) shows how to generate an
 evidence-backed proposal with the existing Codex login.
+The [Phase 6 experiment guide](docs/phase6-experiments.md) covers exact-patch
+approval, isolated Unity checks, and importing paired measurements.
 
 ## Setup
 
@@ -73,6 +75,8 @@ spectuner baseline examples/unity-synthetic.csv
   [Unity walkthrough](unity/README.md#run-locally) explains mode selection.
 - `plan` joins a benchmark pair to its compiled assembly, calls the configured
   model provider, and saves a structured proposal for explicit review.
+- `experiment` verifies the proposal, prepares a reviewable diff, and runs
+  an approved patch in an isolated Unity project copy.
 
 The bundled CSVs are **synthetic**. They contain five frame times per scenario
 per file. Arena median moves from 22 to 18 ms and p95 from 35 to 24 ms. Menu
@@ -99,8 +103,7 @@ The typed interfaces in `spectuner/contracts.py` define artifact identity,
 evidence-backed findings, proposals, approvals bound to a baseline and change
 digest, and rollback receipts. They are interfaces for future implementations.
 
-The planner drafts one experiment from matching run and assembly evidence.
-A future executor should verify the exact approved baseline and change,
-capture a restore point, apply in isolation, rebuild and compare a repeatable
-workload. Applying changes, automated benchmark runs, and rollback are
-future work.
+The experiment runner verifies the approved evidence and source snapshot,
+compiles separate copies, runs Unity checks, and evaluates imported paired
+captures. Rejected changes are restored inside the experiment copy.
+Broader edit recipes and automatic graphical capture runs remain future work.
